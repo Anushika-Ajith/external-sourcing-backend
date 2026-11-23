@@ -561,6 +561,7 @@ class WhatsAppPoLineUpdateBody(BaseModel):
     qty_ordered: Optional[float] = None
     buyer_qty: Optional[float] = None
     supplier_qty: Optional[float] = None
+    rfq_qty: Optional[int] = None
     unit_price: Optional[float] = None
     line_status: Optional[str] = Field(default="DRAFT")
 

@@ -215,6 +215,7 @@ def _apply_lines_from_business(
             qty_ordered=line.get("qty_ordered"),
             buyer_qty=line.get("buyer_qty"),
             supplier_qty=line.get("supplier_qty"),
+            rfq_qty=line.get("rfq_qty"),
         )
         line_payload = {
             "item_id": item_id_int,

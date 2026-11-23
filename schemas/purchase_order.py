@@ -138,6 +138,7 @@ class PurchaseOrderLineBase(BaseModel):
     suggested_qty: Optional[Decimal] = None
     buyer_qty: Optional[Decimal] = None
     supplier_qty: Optional[Decimal] = None
+    rfq_qty: Optional[int] = None
     qty_received: Optional[Decimal] = None
     qty_invoiced: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
@@ -190,6 +191,7 @@ class PurchaseOrderLineUpdate(BaseModel):
     suggested_qty: Optional[Decimal] = None
     buyer_qty: Optional[Decimal] = None
     supplier_qty: Optional[Decimal] = None
+    rfq_qty: Optional[int] = None
     qty_received: Optional[Decimal] = None
     qty_invoiced: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None

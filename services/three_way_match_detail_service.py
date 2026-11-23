@@ -236,6 +236,7 @@ def _load_po_full(
                 "item_no": line.item_no,
                 "description": line.description,
                 "qty_ordered": line.qty_ordered,
+                "rfq_qty": line.rfq_qty,
                 "unit_price": line.unit_price,
                 "tax_percent": line.tax_percent,
                 "tax_amount": line.tax_amount,
