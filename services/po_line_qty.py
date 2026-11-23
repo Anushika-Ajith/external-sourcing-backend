@@ -64,23 +64,13 @@ def apply_qty_defaults_on_create(
     return data
 
 
-def _to_rfq_qty(value: NumberLike) -> Optional[int]:
-    if value is None or value == "":
-        return None
-    try:
-        return int(Decimal(str(value)))
-    except (InvalidOperation, ValueError, TypeError):
-        return None
-
-
 def qty_fields_for_create(
     *,
     suggested_qty: NumberLike = None,
     qty_ordered: NumberLike = None,
     buyer_qty: NumberLike = None,
     supplier_qty: NumberLike = None,
-    rfq_qty: NumberLike = None,
-) -> Dict[str, Any]:
+) -> Dict[str, Decimal]:
     data: Dict[str, Any] = {}
     if suggested_qty is not None:
         data["suggested_qty"] = suggested_qty
@@ -91,16 +81,12 @@ def qty_fields_for_create(
     if supplier_qty is not None:
         data["supplier_qty"] = supplier_qty
     apply_qty_defaults_on_create(data)
-    result: Dict[str, Any] = {
+    return {
         "suggested_qty": data["suggested_qty"],
         "buyer_qty": data["buyer_qty"],
         "supplier_qty": data["supplier_qty"],
         "qty_ordered": data["qty_ordered"],
     }
-    parsed_rfq = _to_rfq_qty(rfq_qty)
-    if parsed_rfq is not None:
-        result["rfq_qty"] = parsed_rfq
-    return result
 
 
 def apply_buyer_qty_edit(line: PurchaseOrderLine, new_qty: Decimal) -> None:
@@ -157,12 +143,6 @@ def apply_line_qty_update(
         suggested = to_qty_decimal(remaining.pop("suggested_qty"))
         if suggested is not None:
             line.suggested_qty = suggested
-
-    # rfq_qty is RFQ snapshot — allow explicit set but do not cascade.
-    if "rfq_qty" in remaining:
-        parsed_rfq = _to_rfq_qty(remaining.pop("rfq_qty"))
-        if parsed_rfq is not None:
-            line.rfq_qty = parsed_rfq
 
     if buyer is not None:
         apply_buyer_qty_edit(line, buyer)

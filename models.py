@@ -1564,7 +1564,6 @@ class PurchaseOrderLine(Base):
     suggested_qty = Column(Numeric(18, 2))
     buyer_qty = Column(Numeric(18, 2))
     supplier_qty = Column(Numeric(18, 2))
-    rfq_qty = Column(Integer)
     qty_received = Column(Numeric(18, 2), default=0)
     qty_invoiced = Column(Numeric(18, 2), default=0)
     unit_price = Column(Numeric(18, 2))
