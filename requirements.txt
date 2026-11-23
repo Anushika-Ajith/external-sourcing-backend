@@ -1,0 +1,47 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pgvector
+pydantic
+pydantic-settings
+pydantic[email]
+python-multipart
+redis
+aioredis
+immudb-py
+
+python-dotenv
+
+bcrypt==4.0.1
+passlib[bcrypt]==1.7.4
+
+python-jose[cryptography]
+
+requests
+
+pillow
+pytesseract
+pdf2image
+pdfplumber
+numpy==2.2.6
+scipy==1.15.3
+# OCR & image dependencies
+opencv-python
+
+# PDF handling dependencies
+PyMuPDF
+reportlab>=4.0.0
+
+# OpenAI — OCR structuring, item fingerprints, and embeddings
+openai>=1.59.0
+
+# General utilities
+python-dotenv
+pandas==2.3.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+scikit-learn==1.7.0
+ruptures>=1.1.9
+watchdog>=4.0.0
