@@ -127,6 +127,34 @@ class TestOcrStockImport(unittest.TestCase):
         self.assertEqual(resolved["product_code"], "SUP00042")
         mock_apply_vendor_code.assert_called_once()
 
+    @mock.patch("services.ocr_stock_import._find_vendor_item_by_product_name")
+    @mock.patch("services.ocr_stock_import._product_code_matches_vendor_catalog")
+    def test_resolve_line_skips_when_vendor_product_code_missing(
+        self,
+        mock_catalog_match,
+        mock_find_by_name,
+    ):
+        mock_catalog_match.return_value = False
+        mock_find_by_name.return_value = VendorItem(
+            id=167,
+            vendor_id=12,
+            vendor_product_code=None,
+            erp_code="ERP00072",
+            company_code="IT00072",
+            product_name="Elite Cake",
+        )
+
+        resolved, skip = _resolve_line_product_identity(
+            {
+                "product_code": None,
+                "product_name": "Elite Cake",
+                "available_stock": 1,
+            },
+            db=mock.Mock(),
+        )
+        self.assertIsNone(resolved)
+        self.assertIn("vendor_product_code", skip or "")
+
 
 if __name__ == "__main__":
     unittest.main()

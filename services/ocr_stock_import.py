@@ -227,10 +227,11 @@ def extract_stock_lines_from_payload(ocr_payload: Dict[str, Any]) -> List[Dict[s
             if name:
                 aliased["product_name"] = name
         if not _clean_str(aliased.get("product_code")):
+            # Prefer vendor_product_code for stock.product_code; erp_code is ERP-only.
             code = (
-                _clean_str(aliased.get("erp_code"))
-                or _clean_str(aliased.get("vendor_product_code"))
+                _clean_str(aliased.get("vendor_product_code"))
                 or _clean_str(aliased.get("sku"))
+                or _clean_str(aliased.get("erp_code"))
             )
             if code:
                 aliased["product_code"] = code
@@ -549,7 +550,12 @@ def _apply_vendor_item_product_code(
     *,
     db: Session,
 ) -> Dict[str, Any]:
-    """Store vendor_product_code on stock rows and prefill preferred_supplier."""
+    """
+    Store vendor_product_code on stock rows and prefill preferred_supplier.
+
+    stock.product_code must be vendor_items.vendor_product_code only.
+    erp_code stays on vendor_items and is never written as stock.product_code.
+    """
     out = dict(resolved)
     vendor_product_code = _stock_product_code_from_vendor_item(vendor_item)
     if vendor_product_code:
@@ -561,6 +567,10 @@ def _apply_vendor_item_product_code(
     if vendor_item.id is not None:
         out["matched_vendor_item_id"] = int(vendor_item.id)
     return out
+
+
+def _has_vendor_product_code(vendor_item: VendorItem) -> bool:
+    return bool(_stock_product_code_from_vendor_item(vendor_item))
 
 
 def _find_vendor_item_for_embedding_match(
@@ -605,24 +615,27 @@ def _apply_embedding_catalog_match(
     *,
     db: Session,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Resolve product_code via item_embeddings; returns (line, skip_reason)."""
+    """Resolve stock.product_code via item_embeddings → vendor_product_code only."""
     match = match_stock_line_to_catalog(resolved)
     if match is None:
         return None, "No matching item_embeddings catalog entry"
 
+    vendor_item = _find_vendor_item_for_embedding_match(db, match)
+    if vendor_item is None or not _has_vendor_product_code(vendor_item):
+        return None, (
+            "item_embeddings match has no vendor_items.vendor_product_code "
+            f"(item_code={match.item_code!r})"
+        )
+
     resolved = dict(resolved)
-    resolved["product_code"] = _clip(match.item_code, 50)
     if not _clean_str(resolved.get("product_name")):
         resolved["product_name"] = _clip(match.item_name, 255)
     if not _clean_str(resolved.get("preferred_supplier")):
         resolved["preferred_supplier"] = _clip(match.vendor_code, 150)
     resolved["matched_item_embedding_id"] = match.item_embedding_id
     resolved["catalog_match_distance"] = match.distance
+    resolved = _apply_vendor_item_product_code(resolved, vendor_item, db=db)
     resolved["needs_catalog_match"] = False
-
-    vendor_item = _find_vendor_item_for_embedding_match(db, match)
-    if vendor_item is not None:
-        resolved = _apply_vendor_item_product_code(resolved, vendor_item, db=db)
 
     logger.info(
         "Stock line matched item_embeddings id=%s item_code=%s distance=%.4f name=%s product_code=%s",
@@ -641,10 +654,10 @@ def _resolve_line_product_identity(
     db: Session,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
-    Ensure line has a product_code.
+    Ensure line has stock.product_code = vendor_items.vendor_product_code.
 
-    When product_code is missing, or present but not found on vendor_items,
-    match by exact product name on vendor_items, then VECTOR_DB.item_embeddings.
+    ERP codes may be used only to look up the vendor item; they are never stored
+    as stock.product_code. Lines without a vendor_product_code are skipped.
     Returns (resolved_line, skip_reason).
     """
     resolved = dict(line)
@@ -654,12 +667,25 @@ def _resolve_line_product_identity(
     has_product_id = resolved.get("supplier_product_id") is not None
 
     if has_product_id:
-        # Sheet has product_id but no SKU — use id as stock.product_code.
-        resolved["product_code"] = _clip(str(resolved["supplier_product_id"]), 50)
-        if not _clean_str(resolved.get("product_name")):
-            resolved["product_name"] = resolved["product_code"]
-        resolved["needs_catalog_match"] = False
-        return resolved, None
+        vendor_item = (
+            db.query(VendorItem)
+            .filter(VendorItem.id == int(resolved["supplier_product_id"]))
+            .first()
+        )
+        if vendor_item is not None and _has_vendor_product_code(vendor_item):
+            resolved = _apply_vendor_item_product_code(resolved, vendor_item, db=db)
+            if not _clean_str(resolved.get("product_name")):
+                resolved["product_name"] = (
+                    _clean_str(vendor_item.product_name)
+                    or _clean_str(vendor_item.item_name)
+                    or resolved["product_code"]
+                )
+            resolved["needs_catalog_match"] = False
+            return resolved, None
+        return None, (
+            "product_id has no vendor_items.vendor_product_code "
+            f"(product_id={resolved['supplier_product_id']})"
+        )
 
     if has_code:
         if not product_name:
@@ -680,12 +706,24 @@ def _resolve_line_product_identity(
                     candidate_codes=_vendor_item_product_codes(vendor_item),
                     log_context="stock upload",
                 )
-                if ok:
+                if ok and _has_vendor_product_code(vendor_item):
                     resolved = _apply_vendor_item_product_code(
                         resolved, vendor_item, db=db
                     )
                     resolved["needs_catalog_match"] = False
                     return resolved, None
+                if ok and not _has_vendor_product_code(vendor_item):
+                    logger.info(
+                        "Stock line code=%r name=%r matched vendor_item_id=%s "
+                        "but vendor_product_code is missing — skipping ERP/VI fallback",
+                        product_code,
+                        resolved.get("product_name"),
+                        vendor_item.id,
+                    )
+                    return None, (
+                        "matched vendor_item has no vendor_product_code "
+                        f"(vendor_item_id={vendor_item.id})"
+                    )
                 logger.info(
                     "Stock line code=%r name=%r matched vendor_item_id=%s "
                     "but embedding gate failed: %s — trying catalog embedding match",
@@ -700,8 +738,10 @@ def _resolve_line_product_identity(
     if product_name:
         vendor_item = _find_vendor_item_by_product_name(db, product_name)
         if vendor_item is not None:
-            resolved = _apply_vendor_item_product_code(resolved, vendor_item, db=db)
-            if _clean_str(resolved.get("product_code")):
+            if _has_vendor_product_code(vendor_item):
+                resolved = _apply_vendor_item_product_code(
+                    resolved, vendor_item, db=db
+                )
                 resolved["needs_catalog_match"] = False
                 logger.info(
                     "Stock line name=%r matched vendor_item_id=%s product_code=%r",
@@ -710,25 +750,16 @@ def _resolve_line_product_identity(
                     resolved.get("product_code"),
                 )
                 return resolved, None
-            # Vendor item exists but has no vendor_product_code — still stock it
-            # under a stable code derived from the item id.
-            fallback_code = _clip(
-                _clean_str(vendor_item.erp_code)
-                or _clean_str(vendor_item.company_code)
-                or (f"VI{vendor_item.id}" if vendor_item.id is not None else None),
-                50,
+            logger.info(
+                "Stock line name=%r matched vendor_item_id=%s "
+                "but vendor_product_code is missing — skipping ERP/VI fallback",
+                product_name,
+                vendor_item.id,
             )
-            if fallback_code:
-                resolved["product_code"] = fallback_code
-                resolved["needs_catalog_match"] = False
-                logger.info(
-                    "Stock line name=%r matched vendor_item_id=%s "
-                    "using fallback product_code=%r",
-                    product_name,
-                    vendor_item.id,
-                    fallback_code,
-                )
-                return resolved, None
+            return None, (
+                "matched vendor_item has no vendor_product_code "
+                f"(vendor_item_id={vendor_item.id})"
+            )
 
     matched, skip_reason = _apply_embedding_catalog_match(resolved, db=db)
     if matched is not None:
