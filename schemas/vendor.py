@@ -120,6 +120,14 @@ class VendorDirectoryItem(BaseModel):
         None,
         description="Currency from the matched vendor_rates row (default INR)",
     )
+    valid_from: Optional[date] = Field(
+        None,
+        description="Rate contract valid-from (vendor_rates.valid_from)",
+    )
+    valid_to: Optional[date] = Field(
+        None,
+        description="Rate contract expiry / valid-to (vendor_rates.valid_to)",
+    )
 
     class Config:
         from_attributes = True

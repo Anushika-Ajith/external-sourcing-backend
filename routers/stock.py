@@ -13,6 +13,7 @@ from schemas.stock import StockCreate, StockResponse, StockUpdate
 from schemas.stock_spike import (
     CreatePoFromSalesSpikesRequest,
     CreatePoFromSalesSpikesResponse,
+    CreatePoLineSummary,
     StockSpikeAnalysisResponse,
     StockSpikeDetectionListResponse,
 )
@@ -300,11 +301,24 @@ async def create_purchase_order_from_sales_spikes(
         version_no=body.version_no,
         quantities=body.quantities,
     )
-    line_count = (
+    po_lines = (
         db.query(PurchaseOrderLine)
         .filter(PurchaseOrderLine.po_id == header.po_id)
-        .count()
+        .order_by(PurchaseOrderLine.line_no.asc())
+        .all()
     )
+    line_count = len(po_lines)
+    line_summaries = [
+        CreatePoLineSummary(
+            line_no=int(ln.line_no) if ln.line_no is not None else idx + 1,
+            description=(ln.description or None),
+            item_no=(ln.item_no or None),
+            qty_ordered=float(ln.qty_ordered) if ln.qty_ordered is not None else None,
+            uom=(ln.uom or None),
+            unit_price=float(ln.unit_price) if ln.unit_price is not None else None,
+        )
+        for idx, ln in enumerate(po_lines)
+    ]
 
     vendor_name = None
     try:
@@ -339,6 +353,7 @@ async def create_purchase_order_from_sales_spikes(
         version_no=header.version_no,
         tenant_id=header.tenant_id,
         company_id=header.company_id,
+        lines=line_summaries,
     )
 
 

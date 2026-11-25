@@ -56,6 +56,17 @@ class CreatePoFromSalesSpikesRequest(BaseModel):
     )
 
 
+class CreatePoLineSummary(BaseModel):
+    """Compact line for WhatsApp / create-PO replies."""
+
+    line_no: int
+    description: Optional[str] = None
+    item_no: Optional[str] = None
+    qty_ordered: Optional[float] = None
+    uom: Optional[str] = None
+    unit_price: Optional[float] = None
+
+
 class CreatePoFromSalesSpikesResponse(BaseModel):
     po_id: int
     po_number: str
@@ -69,3 +80,7 @@ class CreatePoFromSalesSpikesResponse(BaseModel):
     version_no: Optional[int] = None
     tenant_id: Optional[int] = None
     company_id: Optional[int] = None
+    lines: Optional[List[CreatePoLineSummary]] = Field(
+        default=None,
+        description="Created PO lines (item + qty) for chat display",
+    )

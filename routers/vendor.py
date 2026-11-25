@@ -2335,6 +2335,8 @@ async def list_vendors_by_erp_code(
                     rate=rate_info.get("rate"),
                     uom=rate_info.get("uom"),
                     currency=rate_info.get("currency"),
+                    valid_from=rate_info.get("valid_from"),
+                    valid_to=rate_info.get("valid_to"),
                 )
             )
         vendors_for_code.sort(key=lambda v: (v.vendor_name or "").lower())

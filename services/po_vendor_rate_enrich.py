@@ -29,12 +29,19 @@ def get_vendor_rate_for_product_code(
     """
     Resolve latest vendor_rates row for a vendor + stock product code.
 
-    Returns ``{rate, uom, currency}`` (values may be None when unmatched).
+    Returns ``{rate, uom, currency, valid_from, valid_to}`` (values may be None).
+    ``valid_to`` is the rate-contract expiry date when present.
     """
     code = (erp_code or "").strip()
     name = (product_name or "").strip() or code
     if not code or vendor_id is None:
-        return {"rate": None, "uom": None, "currency": None}
+        return {
+            "rate": None,
+            "uom": None,
+            "currency": None,
+            "valid_from": None,
+            "valid_to": None,
+        }
 
     item = _find_existing_vendor_item(db, int(vendor_id), name, code, code, None)
     if item is None:
@@ -53,7 +60,13 @@ def get_vendor_rate_for_product_code(
             .first()
         )
     if item is None or item.id is None:
-        return {"rate": None, "uom": None, "currency": None}
+        return {
+            "rate": None,
+            "uom": None,
+            "currency": None,
+            "valid_from": None,
+            "valid_to": None,
+        }
 
     rate_row = get_latest_vendor_rate(
         db,
@@ -62,6 +75,8 @@ def get_vendor_rate_for_product_code(
     )
     rate_val: Optional[float] = None
     currency: Optional[str] = None
+    valid_from = None
+    valid_to = None
     if rate_row is not None:
         if rate_row.rate is not None:
             try:
@@ -69,6 +84,8 @@ def get_vendor_rate_for_product_code(
             except (TypeError, ValueError):
                 rate_val = None
         currency = (rate_row.currency or None) if getattr(rate_row, "currency", None) else None
+        valid_from = getattr(rate_row, "valid_from", None)
+        valid_to = getattr(rate_row, "valid_to", None)
 
     uom = (
         (item.uom or item.uom_p or item.purchase_unit or None)
@@ -78,7 +95,13 @@ def get_vendor_rate_for_product_code(
     if isinstance(uom, str):
         uom = uom.strip() or None
 
-    return {"rate": rate_val, "uom": uom, "currency": currency}
+    return {
+        "rate": rate_val,
+        "uom": uom,
+        "currency": currency,
+        "valid_from": valid_from,
+        "valid_to": valid_to,
+    }
 
 
 def _normalize_name(value: Optional[str]) -> str:

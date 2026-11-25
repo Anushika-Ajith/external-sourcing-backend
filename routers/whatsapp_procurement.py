@@ -23,6 +23,7 @@ from schemas.stock import StockResponse
 from schemas.stock_spike import (
     CreatePoFromSalesSpikesRequest,
     CreatePoFromSalesSpikesResponse,
+    CreatePoLineSummary,
 )
 from schemas.vendor import VendorDirectoryItem, VendorsForErpCodeOut
 from services.company_scope import resolve_company_id
@@ -255,6 +256,8 @@ async def list_vendors_by_erp_code_for_whatsapp(
                     rate=rate_info.get("rate"),
                     uom=rate_info.get("uom"),
                     currency=rate_info.get("currency"),
+                    valid_from=rate_info.get("valid_from"),
+                    valid_to=rate_info.get("valid_to"),
                 )
             )
         vendors_for_code.sort(key=lambda v: (v.vendor_name or "").lower())
@@ -299,11 +302,24 @@ async def create_purchase_order_for_whatsapp(
     )
     from models import PurchaseOrderLine
 
-    line_count = (
+    po_lines = (
         db.query(PurchaseOrderLine)
         .filter(PurchaseOrderLine.po_id == header.po_id)
-        .count()
+        .order_by(PurchaseOrderLine.line_no.asc())
+        .all()
     )
+    line_count = len(po_lines)
+    line_summaries = [
+        CreatePoLineSummary(
+            line_no=int(ln.line_no) if ln.line_no is not None else idx + 1,
+            description=(ln.description or None),
+            item_no=(ln.item_no or None),
+            qty_ordered=float(ln.qty_ordered) if ln.qty_ordered is not None else None,
+            uom=(ln.uom or None),
+            unit_price=float(ln.unit_price) if ln.unit_price is not None else None,
+        )
+        for idx, ln in enumerate(po_lines)
+    ]
 
     # Same as UI PO create / sales-spike: best-effort WhatsApp notify (never fails create).
     vendor_name: Optional[str] = None
@@ -337,6 +353,7 @@ async def create_purchase_order_for_whatsapp(
         version_no=header.version_no,
         tenant_id=header.tenant_id,
         company_id=header.company_id,
+        lines=line_summaries,
     )
 
 
