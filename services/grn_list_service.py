@@ -43,9 +43,62 @@ def _pick_str(row: Dict[str, Any], *keys: str, default: str = "") -> str:
     return default
 
 
-def normalize_grn_header(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize ERP camelCase GRN header into snake_case."""
+def _pick_float(row: Dict[str, Any], *keys: str) -> Optional[float]:
+    for key in keys:
+        value = row.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def normalize_grn_line(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize one ERP GRN line for WhatsApp / UI summaries."""
+    line_no = _pick_int(row, "line_no", "lineNo", default=0) or 0
+    item_name = _pick_str(
+        row,
+        "description",
+        "item_name",
+        "itemName",
+        "product_name",
+        "productName",
+        "item_no",
+        "itemNo",
+        default=f"Line {line_no}" if line_no else "Line",
+    )
     return {
+        "line_no": line_no,
+        "item_name": item_name,
+        "item_no": _pick_str(row, "item_no", "itemNo") or None,
+        "qty": _pick_float(
+            row,
+            "qty_received",
+            "qtyReceived",
+            "qty_accepted",
+            "qtyAccepted",
+            "qty_ordered",
+            "qtyOrdered",
+        ),
+        "uom": _pick_str(row, "uom", "Uom", "UOM") or None,
+        "unit_price": _pick_float(
+            row, "unit_price", "unitPrice", "po_item_rate", "poItemRate"
+        ),
+        "line_amount": _pick_float(
+            row, "total_amount", "totalAmount", "line_amount", "lineAmount"
+        ),
+    }
+
+
+def normalize_grn_header(
+    row: Dict[str, Any],
+    *,
+    include_lines: bool = False,
+) -> Dict[str, Any]:
+    """Normalize ERP camelCase GRN header into snake_case."""
+    out: Dict[str, Any] = {
         "tenant_id": _pick_int(row, "tenant_id", "tenantId", default=0) or 0,
         "company_id": _pick_int(row, "company_id", "companyId", default=0) or 0,
         "document_type": _pick_str(row, "document_type", "documentType", default="GRN"),
@@ -58,6 +111,16 @@ def normalize_grn_header(row: Dict[str, Any]) -> Dict[str, Any]:
         "status": row.get("status"),
         "inspection_status": row.get("inspection_status") or row.get("inspectionStatus"),
     }
+    if include_lines:
+        raw_lines = row.get("lines") or row.get("grn_lines") or row.get("grnLines") or []
+        lines = [
+            normalize_grn_line(line)
+            for line in raw_lines
+            if isinstance(line, dict)
+        ]
+        out["lines"] = lines
+        out["line_count"] = len(lines)
+    return out
 
 
 def _fetch_paginated(url: str, params: Dict[str, str], *, max_items: int = 5000) -> List[Dict[str, Any]]:
@@ -113,6 +176,7 @@ def list_grn_headers(
     vendor_id: Optional[int] = None,
     page: int = 1,
     limit: int = 100,
+    include_lines: bool = False,
 ) -> Dict[str, Any]:
     """
     GET {INTERNAL_API_URL}/grn-header/with-lines
@@ -165,7 +229,7 @@ def list_grn_headers(
         skip = max(0, (page - 1) * limit)
 
     items = [
-        normalize_grn_header(row)
+        normalize_grn_header(row, include_lines=include_lines)
         for row in items_raw
         if isinstance(row, dict)
     ]

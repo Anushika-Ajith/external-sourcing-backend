@@ -223,9 +223,63 @@ async def list_purchase_order_headers(
     return q.order_by(PurchaseOrderHeader.po_date.desc()).offset(skip).limit(limit).all()
 
 
+class WhatsAppPoLineSummary(BaseModel):
+    line_no: int
+    item_name: str
+    item_no: Optional[str] = None
+    qty: Optional[float] = None
+    uom: Optional[str] = None
+    unit_price: Optional[float] = None
+    line_amount: Optional[float] = None
+
+
+class WhatsAppPoListItem(BaseModel):
+    po_id: int
+    po_number: str
+    po_date: Optional[str] = None
+    vendor_name: Optional[str] = None
+    status: Optional[str] = None
+    approval_status: Optional[str] = None
+    currency_code: Optional[str] = None
+    net_total_amount: Optional[str] = None
+    po_total_amount: Optional[str] = None
+    line_count: int = 0
+    lines: List[WhatsAppPoLineSummary] = Field(default_factory=list)
+
+
+def _whatsapp_po_line_summary(line: PurchaseOrderLine) -> WhatsAppPoLineSummary:
+    qty_raw = line.qty_ordered if line.qty_ordered is not None else line.buyer_qty
+    qty = float(qty_raw) if qty_raw is not None else None
+    price_raw = (
+        line.unit_price
+        if line.unit_price is not None
+        else line.po_item_rate
+        if line.po_item_rate is not None
+        else line.rate_contract_item_rate
+    )
+    unit_price = float(price_raw) if price_raw is not None else None
+    amount_raw = line.total_amount
+    if amount_raw is None and qty is not None and unit_price is not None:
+        amount_raw = qty * unit_price
+    item_name = (
+        (line.description or "").strip()
+        or (line.item_no or "").strip()
+        or f"Line {line.line_no}"
+    )
+    return WhatsAppPoLineSummary(
+        line_no=int(line.line_no),
+        item_name=item_name,
+        item_no=(line.item_no or None),
+        qty=qty,
+        uom=(line.uom or None),
+        unit_price=unit_price,
+        line_amount=float(amount_raw) if amount_raw is not None else None,
+    )
+
+
 @router.get(
     "/whatsapp/by-phone",
-    response_model=List[PurchaseOrderHeaderResponse],
+    response_model=List[WhatsAppPoListItem],
     dependencies=[Depends(require_whatsapp_api_key)],
 )
 async def list_purchase_orders_for_whatsapp_phone(
@@ -241,11 +295,12 @@ async def list_purchase_orders_for_whatsapp_phone(
         ),
     ),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     """
     WhatsApp MCP path for listing POs by sender phone.
+    Returns a compact summary (header + line items) for chat display.
     Auth: X-WhatsApp-API-Key only (no user JWT / buyer role check).
     """
     company_id = resolve_company_id(company_id)
@@ -267,12 +322,60 @@ async def list_purchase_orders_for_whatsapp_phone(
         # auto: phone tied to a vendor → vendor-scoped list
         q = q.filter(PurchaseOrderHeader.vendor_id == int(vendor.vendor_id))
 
-    return (
+    headers = (
         q.order_by(PurchaseOrderHeader.po_date.desc())
         .offset(skip)
         .limit(limit)
         .all()
     )
+    if not headers:
+        return []
+
+    po_ids = [int(h.po_id) for h in headers if h.po_id is not None]
+    lines_by_po: dict[int, list[PurchaseOrderLine]] = {po_id: [] for po_id in po_ids}
+    if po_ids:
+        line_rows = (
+            db.query(PurchaseOrderLine)
+            .filter(PurchaseOrderLine.po_id.in_(po_ids))
+            .order_by(PurchaseOrderLine.po_id, PurchaseOrderLine.line_no)
+            .all()
+        )
+        for line in line_rows:
+            if line.po_id is None:
+                continue
+            lines_by_po.setdefault(int(line.po_id), []).append(line)
+
+    out: List[WhatsAppPoListItem] = []
+    for header in headers:
+        po_id = int(header.po_id)
+        line_summaries = [
+            _whatsapp_po_line_summary(line) for line in lines_by_po.get(po_id, [])
+        ]
+        po_date = header.po_date.isoformat() if header.po_date is not None else None
+        out.append(
+            WhatsAppPoListItem(
+                po_id=po_id,
+                po_number=str(header.po_number or ""),
+                po_date=po_date,
+                vendor_name=header.vendor_name_snapshot,
+                status=header.status,
+                approval_status=header.approval_status,
+                currency_code=header.currency_code,
+                net_total_amount=(
+                    str(header.net_total_amount)
+                    if header.net_total_amount is not None
+                    else None
+                ),
+                po_total_amount=(
+                    str(header.po_total_amount)
+                    if header.po_total_amount is not None
+                    else None
+                ),
+                line_count=len(line_summaries),
+                lines=line_summaries,
+            )
+        )
+    return out
 
 
 @router.get("/pending", response_model=List[PurchaseOrderHeaderResponse])

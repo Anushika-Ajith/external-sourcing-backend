@@ -44,6 +44,50 @@ def _pick_str(row: Dict[str, Any], *keys: str, default: str = "") -> str:
     return default
 
 
+def _pick_float(row: Dict[str, Any], *keys: str) -> Optional[float]:
+    for key in keys:
+        value = row.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def normalize_invoice_line(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize one ERP invoice line for WhatsApp / UI summaries."""
+    line_no = _pick_int(row, "line_no", "lineNo", default=0) or 0
+    item_name = _pick_str(
+        row,
+        "description",
+        "item_name",
+        "itemName",
+        "product_name",
+        "productName",
+        "item_no",
+        "itemNo",
+        default=f"Line {line_no}" if line_no else "Line",
+    )
+    qty = _pick_float(row, "qty_invoiced", "qtyInvoiced", "qty", "quantity")
+    unit_price = _pick_float(row, "unit_price", "unitPrice", "rate")
+    line_amount = _pick_float(
+        row, "line_amount", "lineAmount", "total_amount", "totalAmount", "amount"
+    )
+    if line_amount is None and qty is not None and unit_price is not None:
+        line_amount = qty * unit_price
+    return {
+        "line_no": line_no,
+        "item_name": item_name,
+        "item_no": _pick_str(row, "item_no", "itemNo") or None,
+        "qty": qty,
+        "uom": _pick_str(row, "uom", "Uom", "UOM") or None,
+        "unit_price": unit_price,
+        "line_amount": line_amount,
+    }
+
+
 def normalize_invoice_header(row: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize ERP camelCase invoice header into snake_case."""
     return {
