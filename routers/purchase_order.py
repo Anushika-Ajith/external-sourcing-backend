@@ -37,8 +37,8 @@ from services.po_vendor_rate_enrich import enrich_po_lines_with_vendor_rates
 from services.auth_utils import get_current_user
 from services.company_scope import resolve_company_id
 from services.po_delete_all_service import delete_all_purchase_orders
-from services.vendor_phone_lookup import find_vendor_by_phone
 from services.whatsapp_auth import require_whatsapp_api_key
+from services.whatsapp_list_scope import resolve_whatsapp_vendor_scope
 
 router = APIRouter(
     prefix="/purchase-order",
@@ -287,12 +287,18 @@ async def list_purchase_orders_for_whatsapp_phone(
     tenant_id: Optional[int] = Query(None),
     company_id: Optional[int] = Query(None),
     scope: str = Query(
-        "auto",
+        "all",
         description=(
-            "auto = vendor POs if phone matches a vendor, else all in scope; "
-            "all = all POs in tenant/company (buyer); "
-            "vendor = only that vendor's POs"
+            "all = all POs in tenant/company (buyer default); "
+            "auto = vendor POs only if phone matches an *approved* vendor; "
+            "vendor = only that vendor's POs (empty if phone is not a vendor). "
+            "BUYER role always lists all regardless of scope."
         ),
+    ),
+    role: Optional[str] = Query(
+        None,
+        description="App role for the WhatsApp sender (e.g. BUYER, VENDOR). "
+        "BUYER → list all POs. If omitted, resolved via Foundation by phone.",
     ),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -300,8 +306,9 @@ async def list_purchase_orders_for_whatsapp_phone(
 ):
     """
     WhatsApp MCP path for listing POs by sender phone.
+    BUYER role → all POs in tenant/company. VENDOR → that vendor's POs.
     Returns a compact summary (header + line items) for chat display.
-    Auth: X-WhatsApp-API-Key only (no user JWT / buyer role check).
+    Auth: X-WhatsApp-API-Key only (no user JWT).
     """
     company_id = resolve_company_id(company_id)
     q = db.query(PurchaseOrderHeader)
@@ -310,23 +317,28 @@ async def list_purchase_orders_for_whatsapp_phone(
     if company_id is not None:
         q = q.filter(PurchaseOrderHeader.company_id == company_id)
 
-    scope_norm = (scope or "auto").strip().lower()
-    vendor = find_vendor_by_phone(db, mobile)
-    if scope_norm == "all":
-        pass
-    elif scope_norm == "vendor":
-        if not vendor:
-            return []
-        q = q.filter(PurchaseOrderHeader.vendor_id == int(vendor.vendor_id))
-    elif vendor:
-        # auto: phone tied to a vendor → vendor-scoped list
-        q = q.filter(PurchaseOrderHeader.vendor_id == int(vendor.vendor_id))
+    vendor_id, scope_reason = resolve_whatsapp_vendor_scope(
+        db, mobile, scope, role=role
+    )
+    if scope_reason == "vendor_required_missing":
+        print(
+            f"[PO-WHATSAPP] list empty mobile={mobile} role={role} "
+            f"reason={scope_reason} tenant={tenant_id} company={company_id}"
+        )
+        return []
+    if vendor_id is not None:
+        q = q.filter(PurchaseOrderHeader.vendor_id == int(vendor_id))
 
     headers = (
         q.order_by(PurchaseOrderHeader.po_date.desc())
         .offset(skip)
         .limit(limit)
         .all()
+    )
+    print(
+        f"[PO-WHATSAPP] list mobile={mobile} role={role} scope={scope} "
+        f"reason={scope_reason} vendor_id={vendor_id} tenant={tenant_id} "
+        f"company={company_id} count={len(headers)}"
     )
     if not headers:
         return []

@@ -29,8 +29,8 @@ from services.invoice_list_service import (
     normalize_invoice_line,
 )
 from services.three_way_match_queue_service import list_three_way_match_queue
-from services.vendor_phone_lookup import find_vendor_by_phone
 from services.whatsapp_auth import require_whatsapp_api_key
+from services.whatsapp_list_scope import resolve_whatsapp_vendor_scope
 
 router = APIRouter(
     prefix="/invoice",
@@ -94,12 +94,18 @@ async def list_invoices_for_whatsapp_phone(
         description="Optional invoice status filter (omit for all)",
     ),
     scope: str = Query(
-        "auto",
+        "all",
         description=(
-            "auto = vendor invoices if phone matches a vendor, else all in scope; "
-            "all = all invoices in tenant/company; "
-            "vendor = only that vendor's invoices"
+            "all = all invoices in tenant/company (buyer default); "
+            "auto = vendor invoices only if phone matches an *approved* vendor; "
+            "vendor = only that vendor's invoices. "
+            "BUYER role always lists all."
         ),
+    ),
+    role: Optional[str] = Query(
+        None,
+        description="App role (BUYER/VENDOR). BUYER → all invoices. "
+        "If omitted, resolved via Foundation by phone.",
     ),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -111,15 +117,11 @@ async def list_invoices_for_whatsapp_phone(
     """
     company_id = resolve_company_id(company_id)
     tenant = int(tenant_id or 1)
-    vendor = find_vendor_by_phone(db, mobile)
-    scope_norm = (scope or "auto").strip().lower()
-    vendor_id: Optional[int] = None
-    if scope_norm == "vendor":
-        if not vendor:
-            return []
-        vendor_id = int(vendor.vendor_id)
-    elif scope_norm != "all" and vendor:
-        vendor_id = int(vendor.vendor_id)
+    vendor_id, scope_reason = resolve_whatsapp_vendor_scope(
+        db, mobile, scope, role=role
+    )
+    if scope_reason == "vendor_required_missing":
+        return []
 
     try:
         result = list_invoice_headers(
