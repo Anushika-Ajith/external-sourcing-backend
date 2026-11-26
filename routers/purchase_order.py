@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Body
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File, Form, Body
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
@@ -39,6 +41,14 @@ from services.company_scope import resolve_company_id
 from services.po_delete_all_service import delete_all_purchase_orders
 from services.vendor_phone_lookup import find_vendor_by_phone
 from services.whatsapp_auth import require_whatsapp_api_key
+from services.requisition_client import (
+    RequisitionClientError,
+    build_requisition_payload,
+    create_requisition,
+    map_po_lines_to_requisition_lines,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/purchase-order",
@@ -837,6 +847,7 @@ async def create_purchase_order_header(
 @router.post("/complete", response_model=PurchaseOrderFullResponse, status_code=status.HTTP_201_CREATED)
 async def create_purchase_order_complete(
     body: PurchaseOrderCompleteCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -921,6 +932,46 @@ async def create_purchase_order_complete(
     except IntegrityError as e:
         db.rollback()
         _raise_po_header_integrity_error(e)
+
+    # Only lines with a positive rfq_qty become requisition lines; one call per PO.
+    requisition_lines = map_po_lines_to_requisition_lines(created_lines)
+    if requisition_lines:
+        # A1 (documented assumption, not lead-confirmed): requisition requesterId
+        # and createdBy both use the PO header's created_by (body.created_by, with
+        # fallback to current_user.user_id). No unmatched item_id is resolved here.
+        payload = build_requisition_payload(
+            tenant_id=body.tenant_id,
+            company_id=body.company_id,
+            requester_id=header_created_by,
+            created_by=header_created_by,
+            requisition_date=body.po_date,
+            lines=requisition_lines,
+        )
+        try:
+            requisition_response = create_requisition(
+                payload=payload,
+                bearer_token=request.headers.get("authorization", ""),
+            )
+            # The create-full identifier shape is not documented locally; do not
+            # persist or return it. See the task report for the A2 finding.
+            logger.debug(
+                "Requisition created for PO po_number=%s (tenant_id=%s, company_id=%s, version_no=%s): %s",
+                body.po_number,
+                body.tenant_id,
+                body.company_id,
+                body.version_no,
+                requisition_response,
+            )
+        except RequisitionClientError:
+            # The PO is already committed: log and return it, never roll back or
+            # write to db here. No retry / failure record is part of this flow.
+            logger.exception(
+                "Failed to create requisition for PO po_number=%s (tenant_id=%s, company_id=%s, version_no=%s)",
+                body.po_number,
+                body.tenant_id,
+                body.company_id,
+                body.version_no,
+            )
 
     header = (
         db.query(PurchaseOrderHeader)
