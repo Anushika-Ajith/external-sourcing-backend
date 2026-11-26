@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File, Form, Body
@@ -948,7 +949,10 @@ async def create_purchase_order_complete(
             lines=requisition_lines,
         )
         try:
-            requisition_response = create_requisition(
+            # Keep the blocking requests.post off the async event loop so a slow
+            # or unreachable internal sourcing API cannot stall other requests.
+            requisition_response = await asyncio.to_thread(
+                create_requisition,
                 payload=payload,
                 bearer_token=request.headers.get("authorization", ""),
             )
