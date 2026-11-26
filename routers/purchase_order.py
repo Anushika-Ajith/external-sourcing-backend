@@ -558,6 +558,7 @@ async def list_purchase_order_lines_for_whatsapp(
 
 
 class WhatsAppPoLineUpdateBody(BaseModel):
+    rfq_qty: Optional[int] = None
     qty_ordered: Optional[float] = None
     buyer_qty: Optional[float] = None
     supplier_qty: Optional[float] = None

@@ -126,6 +126,7 @@ class PurchaseOrderLineHistoryBase(BaseModel):
     item_no: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     uom: Optional[str] = Field(None, max_length=50)
+    rfq_qty: Optional[int] = None
     qty_ordered: Optional[Decimal] = None
     qty_received: Optional[Decimal] = None
     qty_invoiced: Optional[Decimal] = None
@@ -166,6 +167,7 @@ class PurchaseOrderLineHistoryUpdate(BaseModel):
     item_no: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     uom: Optional[str] = Field(None, max_length=50)
+    rfq_qty: Optional[int] = None
     qty_ordered: Optional[Decimal] = None
     qty_received: Optional[Decimal] = None
     qty_invoiced: Optional[Decimal] = None

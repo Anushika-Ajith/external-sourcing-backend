@@ -2,6 +2,9 @@
 
 qty_ordered is the effective PO quantity (what callers historically call \"po qty\").
 
+rfq_qty is an independent RFQ-stage quantity; it is not part of the
+suggested/buyer/supplier/ordered cascade handled here.
+
 Rules:
 - On create: buyer_qty and supplier_qty default to suggested_qty; qty_ordered follows.
 - Buyer edit: qty_ordered = buyer_qty; supplier_qty defaults to that buyer_qty.

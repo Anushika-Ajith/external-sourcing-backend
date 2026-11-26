@@ -80,6 +80,7 @@ def _line_to_history_dict(line: PurchaseOrderLine, revision_no: int) -> dict:
         "item_no": line.item_no,
         "description": line.description,
         "uom": line.uom,
+        "rfq_qty": line.rfq_qty,
         "qty_ordered": line.qty_ordered,
         "qty_received": line.qty_received,
         "qty_invoiced": line.qty_invoiced,

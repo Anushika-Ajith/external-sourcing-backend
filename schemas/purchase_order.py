@@ -134,6 +134,7 @@ class PurchaseOrderLineBase(BaseModel):
         None,
         description="Copied from vendor_items.product_fingerprint on PO create",
     )
+    rfq_qty: Optional[int] = None
     qty_ordered: Optional[Decimal] = None
     suggested_qty: Optional[Decimal] = None
     buyer_qty: Optional[Decimal] = None
@@ -186,6 +187,7 @@ class PurchaseOrderLineUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     uom: Optional[str] = Field(None, max_length=50)
     product_fingerprint: Optional[Dict[str, Any]] = None
+    rfq_qty: Optional[int] = None
     qty_ordered: Optional[Decimal] = None
     suggested_qty: Optional[Decimal] = None
     buyer_qty: Optional[Decimal] = None
