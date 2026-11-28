@@ -1817,3 +1817,51 @@ class SalesTransaction(Base):
     modified_ip = Column(String(45))
 
     product = relationship("Product")
+
+
+class ProjectProgress(Base):
+    """NBCC / works MIS rows for WhatsApp project-progress analysis."""
+
+    __tablename__ = "project_progress"
+    __table_args__ = (
+        Index("idx_project_progress_code", "project_code"),
+        Index("idx_project_progress_status", "project_status"),
+        Index("idx_project_progress_district", "district_name"),
+        Index("idx_project_progress_delay", "delay_category"),
+        Index("idx_project_progress_tenant_company", "tenant_id", "company_id"),
+        Index(
+            "idx_project_progress_dates",
+            "project_start_date",
+            "scheduled_completion_date",
+        ),
+    )
+
+    project_progress_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sl_no = Column(Integer)
+    project_code = Column(String(100), nullable=False)
+    work_type = Column(String(100))
+    project_status = Column(String(100))
+    district_name = Column(String(150))
+    block_name = Column(String(150))
+    name_of_work = Column(Text, nullable=False)
+    client = Column(String(255))
+    project_type = Column(String(100))
+    value_cr = Column(Numeric(14, 4))
+    project_start_date = Column(Date)
+    scheduled_duration = Column(String(50))
+    scheduled_completion_date = Column(Date)
+    project_months_over = Column(Numeric(8, 2))
+    days_left_scheduled = Column(Integer)
+    planned_physical_progress = Column(Numeric(8, 2))
+    actual_physical_progress = Column(Numeric(8, 2))
+    planned_vs_actual_progress = Column(Numeric(8, 2))
+    actual_completion_date = Column(Date)
+    delay_category = Column(String(100))
+    tenant_id = Column(Integer, server_default=text("1"), index=True)
+    company_id = Column(Integer, server_default=text("3"), index=True)
+    created_by = Column(Integer)
+    created_on = Column(DateTime, server_default=func.now())
+    created_ip = Column(String(45))
+    modified_by = Column(Integer)
+    modified_on = Column(DateTime)
+    modified_ip = Column(String(45))

@@ -42,6 +42,7 @@ from routers import (
     stock_upload_header,
     stock_upload_detail,
     sales_transaction,
+    project_progress,
     invoice_line_match,
     invoice,
     grn,
@@ -153,6 +154,7 @@ app.include_router(stock.router)
 app.include_router(stock_upload_header.router)
 app.include_router(stock_upload_detail.router)
 app.include_router(sales_transaction.router)
+app.include_router(project_progress.router)
 app.include_router(invoice_line_match.router)
 app.include_router(invoice.router)
 app.include_router(grn.router)
